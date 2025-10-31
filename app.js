@@ -1,6 +1,9 @@
 
 const visualization = document.getElementById('visualization');
 const background = document.getElementById('background');
+const permissionOverlay = document.getElementById('permission-overlay');
+const permissionButton = document.getElementById('enable-voice');
+const permissionMessage = document.getElementById('permission-message');
 let currentImageModel = 'flux';
 let chatHistory = [];
 let systemPrompt = "";
@@ -16,10 +19,7 @@ window.onload = async () => {
         systemPrompt = "You are Unity, a helpful AI assistant."; // Fallback prompt
     }
 
-    // Start listening for voice input
-    if (recognition) {
-        recognition.start();
-    }
+    await initializeMicrophoneAccess();
 };
 
 // --- Speech Recognition ---
@@ -42,9 +42,7 @@ if (SpeechRecognition) {
         console.log('Voice recognition stopped.');
         visualization.style.borderColor = '#ffffff'; // White when not listening
         // Restart recognition if it stops unexpectedly
-        if (!isMuted) {
-            recognition.start();
-        }
+        startRecognition();
     };
 
     recognition.onresult = (event) => {
@@ -59,6 +57,9 @@ if (SpeechRecognition) {
 
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
+        if (event.error === 'not-allowed') {
+            showPermissionOverlay('Microphone access is required to talk with Unity. Please allow access and try again.');
+        }
     };
 
 } else {
@@ -69,6 +70,94 @@ if (SpeechRecognition) {
 // --- Speech Synthesis ---
 const synth = window.speechSynthesis;
 let isMuted = false;
+
+function startRecognition() {
+    if (!recognition || isMuted) {
+        return;
+    }
+    try {
+        recognition.start();
+    } catch (error) {
+        if (error.name !== 'InvalidStateError') {
+            console.error('Failed to start recognition:', error);
+        }
+    }
+}
+
+function showPermissionOverlay(message) {
+    if (permissionOverlay) {
+        permissionOverlay.classList.remove('hidden');
+    }
+    if (message && permissionMessage) {
+        permissionMessage.textContent = message;
+    }
+}
+
+function hidePermissionOverlay() {
+    if (permissionOverlay) {
+        permissionOverlay.classList.add('hidden');
+    }
+}
+
+async function enableMicrophoneAndStart() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showPermissionOverlay('Microphone access is not supported in this browser.');
+        if (permissionButton) {
+            permissionButton.disabled = true;
+        }
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach(track => track.stop());
+        hidePermissionOverlay();
+        isMuted = false;
+        startRecognition();
+    } catch (error) {
+        console.error('Microphone permission denied or failed:', error);
+        showPermissionOverlay('Microphone access is required to use Unity. Please allow access and try again.');
+    }
+}
+
+async function initializeMicrophoneAccess() {
+    if (!recognition) {
+        showPermissionOverlay('Speech recognition is not supported in this browser.');
+        if (permissionButton) {
+            permissionButton.disabled = true;
+        }
+        return;
+    }
+
+    if (permissionButton) {
+        permissionButton.addEventListener('click', enableMicrophoneAndStart);
+    }
+
+    if (!(navigator.permissions && navigator.permissions.query)) {
+        showPermissionOverlay('Click enable to grant microphone access and begin.');
+        return;
+    }
+
+    try {
+        const status = await navigator.permissions.query({ name: 'microphone' });
+
+        const handleStateChange = async () => {
+            if (status.state === 'granted') {
+                await enableMicrophoneAndStart();
+            } else if (status.state === 'denied') {
+                showPermissionOverlay('Microphone access has been blocked. Please enable it in your browser settings.');
+            } else {
+                showPermissionOverlay('Click enable to grant microphone access and begin.');
+            }
+        };
+
+        await handleStateChange();
+        status.onchange = handleStateChange;
+    } catch (error) {
+        console.warn('Unable to query microphone permission status:', error);
+        showPermissionOverlay('Click enable to grant microphone access and begin.');
+    }
+}
 
 function speak(text) {
     if (synth.speaking) {
@@ -111,7 +200,7 @@ function handleVoiceCommand(command) {
         return true;
     } else if (lowerCaseCommand.includes('unmute my mic') || lowerCaseCommand.includes('unmute microphone')) {
         isMuted = false;
-        recognition.start();
+        startRecognition();
         speak("Microphone unmuted.");
         return true;
     } else if (lowerCaseCommand.includes('shut up') || lowerCaseCommand.includes('be quiet')) {
@@ -201,11 +290,7 @@ async function getAIResponse(userInput) {
         console.error('Error getting image from Pollinations AI:', error);
         // You might want to set a default background image here
     }
-}\n
-
-
-// --- App Initialization ---
-
+}
 
 // --- Image Actions (Voice Controlled) ---
 
