@@ -2,6 +2,25 @@
 const visualization = document.getElementById('visualization');
 const background = document.getElementById('background');
 let currentImageModel = 'flux';
+let chatHistory = [];
+let systemPrompt = "";
+
+// --- App Initialization ---
+window.onload = async () => {
+    // Fetch the system prompt
+    try {
+        const response = await fetch('ai-instruct.txt');
+        systemPrompt = await response.text();
+    } catch (error) {
+        console.error('Error fetching system prompt:', error);
+        systemPrompt = "You are Unity, a helpful AI assistant."; // Fallback prompt
+    }
+
+    // Start listening for voice input
+    if (recognition) {
+        recognition.start();
+    }
+};
 
 // --- Speech Recognition ---
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -119,6 +138,10 @@ function handleVoiceCommand(command) {
         currentImageModel = 'kontext';
         speak("Image model set to kontext.");
         return true;
+    } else if (lowerCaseCommand.includes('clear history') || lowerCaseCommand.includes('delete history') || lowerCaseCommand.includes('clear chat')) {
+        chatHistory = [];
+        speak("Chat history cleared.");
+        return true;
     }
     return false;
 }
@@ -127,28 +150,39 @@ function handleVoiceCommand(command) {
 async function getAIResponse(userInput) {
     console.log(`Sending to AI: ${userInput}`);
 
+    // Add user message to chat history
+    chatHistory.push({ role: "user", content: userInput });
+
+    // Keep only the last 12 messages (excluding the system prompt)
+    if (chatHistory.length > 12) {
+        chatHistory.splice(0, chatHistory.length - 12);
+    }
+
     let aiText = "";
 
     // 1. Get text response from Pollinations AI (unity model)
     try {
+        const messages = [
+            { role: "system", content: systemPrompt },
+            ...chatHistory
+        ];
+
         const textResponse = await fetch('https://text.pollinations.ai/openai', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": userInput
-                    }
-                ],
+                "messages": messages,
                 "model": "unity"
             })
         });
 
         const data = await textResponse.json();
         aiText = data.choices[0].message.content;
+
+        // Add AI response to chat history
+        chatHistory.push({ role: "assistant", content: aiText });
 
         // Speak the AI's text response
         speak(aiText);
