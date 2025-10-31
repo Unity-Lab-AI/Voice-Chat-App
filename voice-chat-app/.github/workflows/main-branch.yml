@@ -27,10 +27,12 @@ jobs:
           python-version: "3.x"
 
       - name: Build Static Files
+        working-directory: voice-chat-app
         run: python scripts/build_static.py
 
       - name: Collect Build Summary
         id: collect-build
+        working-directory: voice-chat-app
         run: |
           python scripts/report_build_status.py \
             --report ci_reports/build_report.json \
@@ -42,12 +44,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: main-dist
-          path: dist
+          path: voice-chat-app/dist
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: voice-chat-app/dist
 
   report-build:
     name: Report Build Status
@@ -79,15 +81,18 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
+        working-directory: voice-chat-app
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Run Tests
+        working-directory: voice-chat-app
         run: python tests/run_tests.py
 
       - name: Collect Test Summary
         id: collect-tests
+        working-directory: voice-chat-app
         run: |
           python tests/report_statuses.py \
             --report ci_reports/test_results.json \
@@ -100,8 +105,8 @@ jobs:
         with:
           name: main-test-results
           path: |
-            ci_reports/test_results.json
-            ci_reports/test-summary.md
+            voice-chat-app/ci_reports/test_results.json
+            voice-chat-app/ci_reports/test-summary.md
 
   deploy:
     name: Deploy to Pages

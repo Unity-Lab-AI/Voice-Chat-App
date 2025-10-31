@@ -25,15 +25,18 @@ jobs:
           python-version: "3.x"
 
       - name: Install dependencies
+        working-directory: voice-chat-app
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       - name: Run Tests
+        working-directory: voice-chat-app
         run: python tests/run_tests.py
 
       - name: Collect Test Summary
         id: collect-summary
+        working-directory: voice-chat-app
         run: |
           python tests/report_statuses.py \
             --report ci_reports/test_results.json \
@@ -46,8 +49,8 @@ jobs:
         with:
           name: pr-test-results
           path: |
-            ci_reports/test_results.json
-            ci_reports/test-summary.md
+            voice-chat-app/ci_reports/test_results.json
+            voice-chat-app/ci_reports/test-summary.md
 
   report-tests:
     name: Report Tests Statuses
