@@ -1,0 +1,134 @@
+name: Main Branch Workflow
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build and Upload Artifacts
+    runs-on: ubuntu-latest
+    outputs:
+      build-summary: ${{ steps.collect-build.outputs.summary }}
+      build-status: ${{ steps.collect-build.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Build Static Files
+        run: python scripts/build_static.py
+
+      - name: Collect Build Summary
+        id: collect-build
+        run: |
+          python scripts/report_build_status.py \
+            --report ci_reports/build_report.json \
+            --write-summary ci_reports/build-summary.md \
+            --set-outputs \
+            --suppress-print
+
+      - name: Upload Dist Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-dist
+          path: dist
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  report-build:
+    name: Report Build Status
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Build Summary
+        run: |
+          SUMMARY="${{ needs.build.outputs['build-summary'] }}"
+          printf '%b\n' "$SUMMARY"
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            printf '%b\n' "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  tests:
+    name: Run Tests
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.collect-tests.outputs.summary }}
+      status: ${{ steps.collect-tests.outputs.status }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Tests
+        run: python tests/run_tests.py
+
+      - name: Collect Test Summary
+        id: collect-tests
+        run: |
+          python tests/report_statuses.py \
+            --report ci_reports/test_results.json \
+            --write-summary ci_reports/test-summary.md \
+            --set-outputs \
+            --suppress-print
+
+      - name: Upload Test Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-test-results
+          path: |
+            ci_reports/test_results.json
+            ci_reports/test-summary.md
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  report-tests:
+    name: Report Tests Statuses
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish Test Summary
+        run: |
+          SUMMARY="${{ needs.tests.outputs.summary }}"
+          printf '%b\n' "$SUMMARY"
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            printf '%b\n' "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          fi

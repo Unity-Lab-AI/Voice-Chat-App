@@ -1,0 +1,4 @@
+__pycache__/
+ci_reports/
+dist/
+*.tar.gz
