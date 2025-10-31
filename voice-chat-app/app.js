@@ -1,0 +1,232 @@
+
+const visualization = document.getElementById('visualization');
+const background = document.getElementById('background');
+let currentImageModel = 'flux';
+
+// --- Speech Recognition ---
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition;
+
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+        console.log('Voice recognition started.');
+        visualization.style.borderColor = '#ff0000'; // Red when listening
+    };
+
+    recognition.onend = () => {
+        console.log('Voice recognition stopped.');
+        visualization.style.borderColor = '#ffffff'; // White when not listening
+        // Restart recognition if it stops unexpectedly
+        if (!isMuted) {
+            recognition.start();
+        }
+    };
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        console.log('User said:', transcript);
+        const isLocalCommand = handleVoiceCommand(transcript);
+        // If it's not a local command, send it to the AI model
+        if (!isLocalCommand) {
+            getAIResponse(transcript);
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+    };
+
+} else {
+    console.error('Speech recognition not supported in this browser.');
+    alert('Speech recognition not supported in this browser.');
+}
+
+// --- Speech Synthesis ---
+const synth = window.speechSynthesis;
+let isMuted = false;
+
+function speak(text) {
+    if (synth.speaking) {
+        console.error('Speech synthesis is already speaking.');
+        return;
+    }
+    if (text !== '') {
+        const utterance = new SpeechSynthesisUtterance(text);
+        const voices = synth.getVoices();
+        const ukFemaleVoice = voices.find(voice => voice.name.includes('Google UK English Female') || voice.lang === 'en-GB' && voice.gender === 'female');
+        
+        if (ukFemaleVoice) {
+            utterance.voice = ukFemaleVoice;
+        } else {
+            // Fallback to default voice if UK female voice is not found
+            console.warn("UK English female voice not found, using default.");
+        }
+
+        utterance.onstart = () => {
+            console.log('AI is speaking...');
+            visualization.style.animation = 'pulse 1s infinite';
+        };
+
+        utterance.onend = () => {
+            console.log('AI finished speaking.');
+            visualization.style.animation = '';
+        };
+        
+        synth.speak(utterance);
+    }
+}
+
+// --- Voice Commands ---
+function handleVoiceCommand(command) {
+    const lowerCaseCommand = command.toLowerCase();
+    if (lowerCaseCommand.includes('mute my mic') || lowerCaseCommand.includes('mute microphone')) {
+        isMuted = true;
+        recognition.stop();
+        speak("Microphone muted.");
+        return true;
+    } else if (lowerCaseCommand.includes('unmute my mic') || lowerCaseCommand.includes('unmute microphone')) {
+        isMuted = false;
+        recognition.start();
+        speak("Microphone unmuted.");
+        return true;
+    } else if (lowerCaseCommand.includes('shut up') || lowerCaseCommand.includes('be quiet')) {
+        synth.cancel();
+        return true;
+    } else if (lowerCaseCommand.includes('copy image') || lowerCaseCommand.includes('copy this image')) {
+        copyImageToClipboard();
+        return true;
+    } else if (lowerCaseCommand.includes('save image') || lowerCaseCommand.includes('download image')) {
+        saveImage();
+        return true;
+    } else if (lowerCaseCommand.includes('open image') || lowerCaseCommand.includes('open this image')) {
+        openImageInNewTab();
+        return true;
+    } else if (lowerCaseCommand.includes('use flux model') || lowerCaseCommand.includes('switch to flux')) {
+        currentImageModel = 'flux';
+        speak("Image model set to flux.");
+        return true;
+    } else if (lowerCaseCommand.includes('use turbo model') || lowerCaseCommand.includes('switch to turbo')) {
+        currentImageModel = 'turbo';
+        speak("Image model set to turbo.");
+        return true;
+    } else if (lowerCaseCommand.includes('use kontext model') || lowerCaseCommand.includes('switch to kontext')) {
+        currentImageModel = 'kontext';
+        speak("Image model set to kontext.");
+        return true;
+    }
+    return false;
+}
+
+// --- AI Model Interaction ---
+async function getAIResponse(userInput) {
+    console.log(`Sending to AI: ${userInput}`);
+
+    let aiText = "";
+
+    // 1. Get text response from Pollinations AI (unity model)
+    try {
+        const textResponse = await fetch('https://text.pollinations.ai/openai', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": userInput
+                    }
+                ],
+                "model": "unity"
+            })
+        });
+
+        const data = await textResponse.json();
+        aiText = data.choices[0].message.content;
+
+        // Speak the AI's text response
+        speak(aiText);
+
+    } catch (error) {
+        console.error('Error getting text from Pollinations AI:', error);
+        speak("Sorry, I couldn't get a text response.");
+    }
+
+    // 2. Get image from Pollinations AI (using the current image model)
+    try {
+        // Use the user's input as the prompt for image generation
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(userInput)}?model=${currentImageModel}`;
+        background.style.backgroundImage = `url(${imageUrl})`;
+    } catch (error) {
+        console.error('Error getting image from Pollinations AI:', error);
+        // You might want to set a default background image here
+    }
+}\n
+
+
+// --- App Initialization ---
+
+
+// --- Image Actions (Voice Controlled) ---
+
+function getImageUrl() {
+    const style = window.getComputedStyle(background);
+    const backgroundImage = style.getPropertyValue('background-image');
+    // Extract URL from 'url("...")'
+    return backgroundImage.slice(5, -2);
+}
+
+async function copyImageToClipboard() {
+    const imageUrl = getImageUrl();
+    if (imageUrl) {
+        try {
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+            speak('Image copied to clipboard.');
+        } catch (err) {
+            console.error('Failed to copy image: ', err);
+            speak('Sorry, I could not copy the image. This might be due to browser limitations.');
+        }
+    }
+}
+
+async function saveImage() {
+    const imageUrl = getImageUrl();
+    if (imageUrl) {
+        try {
+            const response = await fetch(imageUrl);
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'pollination_image.png'; // Or generate a more descriptive name
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            speak('Image saved.');
+        } catch (err) {
+            console.error('Failed to save image: ', err);
+            speak('Sorry, I could not save the image.');
+        }
+    }
+}
+
+function openImageInNewTab() {
+    const imageUrl = getImageUrl();
+    if (imageUrl) {
+        window.open(imageUrl, '_blank');
+        speak('Image opened in new tab.');
+    }
+}
+
+
+
