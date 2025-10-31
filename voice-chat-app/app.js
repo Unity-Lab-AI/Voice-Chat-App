@@ -194,8 +194,10 @@ async function getAIResponse(userInput) {
 
     // 2. Get image from Pollinations AI (using the current image model)
     try {
+        // Generate a random 6-digit seed
+        const seed = Math.floor(100000 + Math.random() * 900000);
         // Use the user's input as the prompt for image generation
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(userInput)}?model=${currentImageModel}`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(userInput)}?height=512&width=512&private=true&enhance=true&seed=${seed}&model=${currentImageModel}&referrer=unityailab.com`;
         background.style.backgroundImage = `url(${imageUrl})`;
     } catch (error) {
         console.error('Error getting image from Pollinations AI:', error);
